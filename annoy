@@ -1,2 +1,123 @@
 #!/usr/bin/env perl
+#Some unices like HPUX does not have a wget or lwp-download
+#Gotta implement this using plain sockets
+use IO::Socket;
+my $proxy = shift;
+my $port = shift;
 
+sub download_file {
+    my $url = shift;
+    return 1 unless( defined($url) );
+    my $output_file ="";;
+    if($url !~ m|/|)   {
+	$output_file = "index.html";
+    }
+    elsif( ($output_file) = ($url =~ m|.*/(.*)$|) ) {
+	
+	if( "$output_file" eq ""  ) {
+	    $output_file = "index.html";
+	}
+    }
+    my $hostname;
+    my $dont_care;
+    my $res_path;
+    if( ($dont_care, $hostname) = ( $url =~ m|^(http://)?([^/]*)| ) ) {
+	if( "$hostname" eq "" ) {
+	    warn "Cannot extract hostname\n";
+	    return 1;
+	}
+    }
+    my $proxy = shift || $hostname;
+    my $port = shift || '80';
+    if( ($res_path) = ( $url =~ m|$dont_care$hostname(.*)| ) ) {
+	if( "$res_path" eq "" ) {
+	    $res_path = "/";
+	}
+    }
+    
+    warn "Hostname : $hostname\n";
+    warn "Resource path : $res_path\n";
+    my $sock = new IO::Socket::INET (
+	PeerAddr => "$proxy",
+	PeerPort => $port,
+	Proto => 'tcp',
+	);
+    unless ($sock) {
+	warn "Could not create socket: $!\n";
+	return 1;
+    }
+    my $request = "GET $res_path HTTP/1.1\r\nHost: $hostname\r\n\r\n";
+    print $sock "$request";
+    my $bytes;
+    my $content_len = 0;
+    my $line = "";
+    while( 1 ) {
+	$bytes = sysread($sock,$buf,1);
+	if( $bytes == 0 ) {
+	    last;
+	}
+	$line .= "$buf";
+	
+	if($line =~ m|^\r\n|) {
+	    last;
+	}
+	if($line =~ m|\r\n$|s) {
+	    $line = "";
+	}
+	if( $line =~ m|Content-Length: (\d*)| ) {	
+	    $content_len = $1
+	}
+    }
+    if ( $content_len == 0 ) {
+	warn "Cannot extract content length\n";
+	return 1;
+    }
+    warn "Content Length: $content_len\n";
+    open OUT, ">$output_file" or die "Cannot open $output_file\n";
+    for( $i=0; $i < $content_len; $i++ ) {
+	sysread($sock,$buf,1);
+	print OUT "$buf";
+    }
+}
+
+print "Trying to figure out machine architecture...\n";
+
+chomp(my $canon_arch = `uname -m`);
+if( !defined($canon_arch) ) {
+    die "Cannot detect architecture\n";
+}
+
+my $arch;
+if( $canon_arch eq "sun4u" ) {
+	$arch = "sparc";
+}
+elsif ( $canon_arch eq "ia64" ) {
+	$arch = "itanium";
+}
+elsif ( $canon_arch eq "9000/800" ) {
+	$arch = "parsic";
+}
+elsif ( $canon_arch eq "x86_64" ) {
+	$arch = "amd64"
+}
+else {
+	die "Cannot detect architecture\n";
+}
+print "Detected architecture is " . $arch . "...\n";
+print "Detecting OS platform...\n";
+chomp(my $canon_os = `uname`);
+if( !defined($canon_os) ) {
+    die "Cannot detect OS\n";
+}
+my $os;
+if( $canon_os eq "HP-UX") {
+    $os = "hpux";
+}
+elsif( $canon_os eq "Linux" ) {
+    $os = "linux";
+}
+else {
+    die "Cannot detect OS\n";
+}
+print "Detected OS platform is " . $os . "\n";
+download_file("http://annoy.googlecode.com/files/bashrc",$proxy,$port);
