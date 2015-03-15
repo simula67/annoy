@@ -1,0 +1,1 @@
+This script downloads and copies a standalone bash, .bashrc etc on a variety of old unices such as Solaris, HP-UX etc
